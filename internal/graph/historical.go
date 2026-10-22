@@ -531,7 +531,7 @@ func historicalGraphPath(target string, source Record) (string, bool) {
 		}
 		decoded, _ := historicalURLUnquote(segment, false, false)
 		routeWord := strings.ToLower(strings.SplitN(decoded, ".", 2)[0])
-		_, knownRoute := historicalRouteWords[routeWord]
+		knownRoute := historicalGraphIdentityRouteWord(routeWord)
 		if !fieldNamePattern.MatchString(decoded) || historicalRiskNamePattern.MatchString(decoded) || (!knownRoute && !historicalSingleLetter.MatchString(decoded)) {
 			alias, aliasErr := historicalOpaqueLabel(source, "request.url.segment["+strconv.Itoa(index)+"]", "segment")
 			if aliasErr != nil {
@@ -543,6 +543,19 @@ func historicalGraphPath(target string, source Record) (string, bool) {
 		}
 	}
 	return strings.Join(segments, "/"), false
+}
+
+// historicalGraphIdentityRouteWord preserves the route vocabulary used by
+// the existing Python BehaviorGraph v1 mapper. That mapper treated product
+// and products as opaque path segments; making them static here changes an
+// imported endpoint ID and causes an immutable-history collision on replay.
+// RouteTemplate may use the broader vocabulary for readable search routes.
+func historicalGraphIdentityRouteWord(word string) bool {
+	if word == "product" || word == "products" {
+		return false
+	}
+	_, known := historicalRouteWords[word]
+	return known
 }
 
 func historicalQueryFields(target string, source Record) ([]string, []historicalParameterField, bool, int) {

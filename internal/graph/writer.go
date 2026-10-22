@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/url"
@@ -451,7 +452,7 @@ func (w *Writer) mergeBundles(bundles []Record) (Record, error) {
 			delete(oldContent, "source_refs")
 			delete(newContent, "source_refs")
 			if !sameCanonical(oldContent, newContent) && !compatibleVariantProjection(oldContent, newContent, w.program) {
-				return nil, errors.New("entity identity collision; graph history cannot be overwritten")
+				return nil, fmt.Errorf("entity identity collision for kind %s fields %s; graph history cannot be overwritten", entity["kind"], strings.Join(recordDifferencePaths(oldContent, newContent, ""), ","))
 			}
 			merged := cloneRecord(previous)
 			merged["source_refs"] = sortedUniqueRefs(append(oldRefs, newRefs...))
@@ -975,7 +976,10 @@ func insertNormalized(ctx context.Context, db *sql.DB, bundle Record, bundleID, 
 		} else {
 			stored, err := decodeRecord(previous)
 			if err != nil || (!sameCanonical(stored, base) && !compatibleVariantProjection(stored, base, program)) {
-				return ImportResult{}, errors.New("entity identity collision; graph history cannot be overwritten")
+				if err != nil {
+					return ImportResult{}, errors.New("entity identity collision; graph history cannot be overwritten")
+				}
+				return ImportResult{}, fmt.Errorf("entity identity collision for kind %s fields %s; graph history cannot be overwritten", base["kind"], strings.Join(recordDifferencePaths(stored, base, ""), ","))
 			}
 		}
 		addedRefs := 0
@@ -1006,6 +1010,70 @@ func insertNormalized(ctx context.Context, db *sql.DB, bundle Record, bundleID, 
 		return ImportResult{}, errors.New("BehaviorGraph import identity could not be recorded")
 	}
 	return result, nil
+}
+
+// recordDifferencePaths reports schema field paths only, never record values.
+// It makes identity-collision diagnostics actionable without including graph
+// payloads or capture-derived values in errors.
+func recordDifferencePaths(left, right any, prefix string) []string {
+	if sameCanonical(left, right) {
+		return nil
+	}
+	leftRecord, leftOK := asRecord(left)
+	rightRecord, rightOK := asRecord(right)
+	if !leftOK || !rightOK {
+		if prefix == "" {
+			return []string{"record"}
+		}
+		return []string{prefix}
+	}
+	keys := make(map[string]struct{}, len(leftRecord)+len(rightRecord))
+	for key := range leftRecord {
+		keys[key] = struct{}{}
+	}
+	for key := range rightRecord {
+		keys[key] = struct{}{}
+	}
+	ordered := make([]string, 0, len(keys))
+	for key := range keys {
+		ordered = append(ordered, key)
+	}
+	sort.Strings(ordered)
+	differences := make([]string, 0)
+	for _, key := range ordered {
+		path := key
+		if prefix != "" {
+			path = prefix + "." + key
+		}
+		if sameCanonical(leftRecord[key], rightRecord[key]) {
+			continue
+		}
+		leftChild, leftChildOK := asRecord(leftRecord[key])
+		rightChild, rightChildOK := asRecord(rightRecord[key])
+		if leftChildOK && rightChildOK {
+			differences = append(differences, recordDifferencePaths(leftChild, rightChild, path)...)
+		} else {
+			differences = append(differences, path)
+		}
+		if len(differences) >= 16 {
+			return differences[:16]
+		}
+	}
+	if len(differences) == 0 {
+		return []string{"record"}
+	}
+	return differences
+}
+
+func asRecord(value any) (Record, bool) {
+	switch typed := value.(type) {
+	case Record:
+		return typed, true
+	case map[string]any:
+		return Record(typed), true
+	default:
+		return nil, false
+	}
 }
 
 // compatibleVariantProjection accepts parser-specific safe metadata for the
