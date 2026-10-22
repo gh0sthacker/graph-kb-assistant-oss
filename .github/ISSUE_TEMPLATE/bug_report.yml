@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a reproducible problem
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, raw captures, personal data, or target-specific secrets.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include a concise description and redacted error output.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic or redacted data.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+    validations:
+      required: false

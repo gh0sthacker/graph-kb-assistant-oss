@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest a product improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, raw captures, personal data, or target-specific secrets.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/hermes-env.sh
+source "$script_dir/hermes-env.sh"
+
+# Keep these values tied to one official Hermes release. Update the release tag,
+# commit, and installer checksum together after reviewing a new upstream release.
+hermes_release="v0.22.3"
+hermes_commit="5b147ab036d6d19131bff8d20701b5001eab844a"
+installer_sha256="20f44240ebada354a468104a6a6724d037afcb8883d4d09ddeb4815622c52d8b"
+
+"$script_dir/setup-hermes"
+mkdir -p "$bb_hermes_bootstrap_home"
+chmod 700 "$bb_hermes_bootstrap_home"
+installer="$(mktemp "$bb_hermes_data_root/.hermes-installer.XXXXXX.sh")"
+trap 'rm -f "$installer"' EXIT
+curl --proto '=https' --tlsv1.2 -fsSL \
+  "https://raw.githubusercontent.com/NousResearch/hermes-agent/$hermes_release/scripts/install.sh" \
+  -o "$installer"
+actual_installer_sha256="$(python3 - "$installer" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+if [[ "$actual_installer_sha256" != "$installer_sha256" ]]; then
+  printf 'Hermes %s installer checksum mismatch; refusing to execute it.\n' "$hermes_release" >&2
+  exit 1
+fi
+
+HOME="$bb_hermes_bootstrap_home" \
+HERMES_HOME="$bb_hermes_profile_home" \
+HERMES_INSTALL_DIR="$bb_hermes_install_dir" \
+  bash "$installer" \
+    --dir "$bb_hermes_install_dir" \
+    --hermes-home "$bb_hermes_profile_home" \
+    --commit "$hermes_commit" \
+    --channel stable \
+    --non-interactive \
+    --skip-browser \
+    --skip-computer-use
